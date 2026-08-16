@@ -124,6 +124,12 @@
       text-align: center;
       margin-top: 8px;
     }
+    #speed-status {
+      font-size: 0.75rem;
+      color: var(--text-sub);
+      text-align: center;
+      margin-top: 4px;
+    }
 
     /* Alert Box */
     .alert {
@@ -204,7 +210,8 @@
         <h2 style="font-size: 1rem; color: var(--accent);">使い方</h2>
         <ul style="font-size: 0.875rem; color: var(--text-sub); padding-left: 20px; line-height: 1.8;">
           <li>スマホの向きは自由です。自動的にクルマの前後を学習します。</li>
-          <li>START後、直進・加速することで前方向を学習します。</li>
+          <li>15km/h以上で直進・加速した時に前方向を学習・補正します。</li>
+          <li>12km/h未満の徐行・駐車場内は採点対象外です。</li>
           <li>落下等の衝撃を検知すると一時的に記録を停止します。</li>
         </ul>
       </div>
@@ -226,7 +233,8 @@
       <div class="card score-container" style="padding: 10px 0;">
         <div class="label">現在のGスコア</div>
         <div id="current-score" class="score-value">100</div>
-        <div id="calib-status">⚠️ 前方方向を学習中...（直進加速してください）</div>
+        <div id="calib-status">⚠️ 前方方向を学習中...（15km/h以上で直進加速してください）</div>
+        <div id="speed-status"></div>
       </div>
 
       <div class="grid-2">
@@ -319,6 +327,11 @@
     let isVecFInitialized = false;      // 前方ベクトルが初期化されたか
     let lastRawAcc = null;              // ジャーク計算用
     
+    // Moving Average Filter State
+    const MA_WINDOW_SIZE = 15;
+    let gxBuffer = [];
+    let gyBuffer = [];
+    
     // サスペンド (衝撃検知)
     let suspendTimer = 0;
     const SUSPEND_DURATION = 3.0; // 秒
@@ -349,7 +362,7 @@
     // 定数
     const G_THRESHOLD = 0.4; // エラー1の閾値(G)
     const JERK_THRESHOLD = 0.5; // エラー2の閾値(G/s)
-    const SPEED_THRESHOLD = 5.0; // 記録有効とする最低速度(km/h)
+    const SPEED_THRESHOLD = 12.0; // 【変更】記録有効とする最低速度(km/h) (徐行・駐車場スキップ)
     
     const realtimeCanvas = document.getElementById('canvas-realtime-g');
     const realtimeCtx = realtimeCanvas.getContext('2d');
@@ -428,6 +441,10 @@
       isVecFInitialized = false;
       lastRawAcc = null;
       suspendTimer = 0;
+      
+      // 移動平均バッファの初期化
+      gxBuffer = [];
+      gyBuffer = [];
       
       lastGx = 0;
       lastGy = 0;
@@ -509,10 +526,18 @@
       lastPosition = { lat, lon, timestamp: now };
       lastSpeed_ms = currentSpeed_ms;
       currentSpeed = currentSpeed_ms * 3.6;
-      isMoving = currentSpeed > SPEED_THRESHOLD;
+      isMoving = currentSpeed >= SPEED_THRESHOLD;
       
       document.getElementById('current-speed').innerText = Math.round(currentSpeed);
       document.getElementById('total-distance').innerText = totalDistance.toFixed(2);
+      
+      const speedStatusEl = document.getElementById('speed-status');
+      if (currentSpeed < SPEED_THRESHOLD && isVecFInitialized) {
+        speedStatusEl.innerText = `低速域(${SPEED_THRESHOLD}km/h未満)のため採点を一時停止中`;
+      } else {
+        speedStatusEl.innerText = '';
+      }
+
       updateScoreUI();
     }
 
@@ -527,21 +552,21 @@
       return R * c;
     }
 
-    // --- Core Logic: Continuous Dynamic Calibration ---
+    // --- Core Logic: Continuous Dynamic Calibration & Filtering ---
     function handleMotion(e) {
       if (!isRecording) return;
       
       const now = performance.now();
       let dt = (now - lastTime) / 1000.0;
       lastTime = now;
-      if (dt > 1.0 || dt <= 0) dt = 0.02; // フォールバック
+      if (dt > 1.0 || dt <= 0) dt = 0.02;
 
       const acc = e.accelerationIncludingGravity;
       if (!acc || acc.x === null) return;
       
       const rawAcc = { x: acc.x, y: acc.y, z: acc.z };
 
-      // 外乱（落下等）検知: 前フレームからの急激なベクトルの変化
+      // 外乱（落下等）検知
       if (lastRawAcc) {
         const dAcc = vSub(rawAcc, lastRawAcc);
         const diffG = vMag(dAcc) / 9.81;
@@ -555,7 +580,7 @@
       if (suspendTimer > 0) {
         suspendTimer -= dt;
         document.getElementById('alert-box').classList.add('show');
-        lastGx = 0; lastGy = 0; // 記録無効として扱う
+        lastGx = 0; lastGy = 0; 
         return;
       }
       document.getElementById('alert-box').classList.remove('show');
@@ -565,50 +590,59 @@
       vecG = vAdd(vScale(vecG, alpha), vScale(rawAcc, 1 - alpha));
       const vecZ = vNorm(vecG);
 
-      // 運動加速度ベクトル M = A - G
       const vecM = vSub(rawAcc, vecG);
 
       // 2. Y軸（前方）の連続学習：【極めて遅いフィルター】
-      if (isAccelerating) {
-        // Mを重力に直交する水平面に射影 M_h = M - (M・Z)Z
+      // 【変更】条件の厳格化：GPS速度が15km/h以上 かつ 一定の加速度がある時のみ学習
+      if (isAccelerating && currentSpeed >= 15.0) {
         const mDotZ = vDot(vecM, vecZ);
         const vecMh = vSub(vecM, vScale(vecZ, mDotZ));
         
-        // 加速度が小さすぎる場合はノイズなので無視
         if (vMag(vecMh) > 0.3) { 
-          // クルマが前に加速すると、スマホには後ろ向きの力がかかるため、逆ベクトルが前
           const fInst = vNorm(vScale(vecMh, -1));
           
           if (!isVecFInitialized) {
-            vecF = fInst; // 初回は直接代入
+            vecF = fInst;
             isVecFInitialized = true;
             document.getElementById('calib-status').style.color = 'var(--success)';
             document.getElementById('calib-status').innerText = '✅ 姿勢キャリブレーション有効';
           } else {
-            const beta = 0.995; // じわじわ学習
+            const beta = 0.995; 
             vecF = vNorm(vAdd(vScale(vecF, beta), vScale(fInst, 1 - beta)));
           }
         }
       }
 
       // 3. 直交座標系（基底ベクトル）の動的生成
-      // vecR (右) = vecF × vecZ
       let vecR = vCross(vecF, vecZ);
       if (vMag(vecR) < 0.001) {
-        // vecFとvecZがほぼ平行な場合の安全対策
         vecR = vNorm(vCross({x:1, y:0, z:0}, vecZ));
       } else {
         vecR = vNorm(vecR);
       }
-      // 真の前方 vecF_ortho = vecZ × vecR
       const vecF_ortho = vNorm(vCross(vecZ, vecR));
 
-      // 4. スコアへの変換
-      // Mを各軸に射影 (単位: G)
-      const Gx = vDot(vecM, vecR) / 9.81; // 左右 (右が正)
-      const Gy = vDot(vecM, vecF_ortho) / 9.81; // 前後 (前が正)
+      // 4. スコアへの変換と【移動平均フィルター】の適用
+      // 生のG値を計算
+      const rawGx = vDot(vecM, vecR) / 9.81; 
+      const rawGy = vDot(vecM, vecF_ortho) / 9.81;
 
-      // スコアリング処理 (前方学習が済んでいて、移動中のみ)
+      // バッファに追加
+      gxBuffer.push(rawGx);
+      gyBuffer.push(rawGy);
+      if (gxBuffer.length > MA_WINDOW_SIZE) gxBuffer.shift();
+      if (gyBuffer.length > MA_WINDOW_SIZE) gyBuffer.shift();
+
+      // 移動平均の算出
+      let sumGx = 0, sumGy = 0;
+      for (let i = 0; i < gxBuffer.length; i++) {
+        sumGx += gxBuffer[i];
+        sumGy += gyBuffer[i];
+      }
+      const Gx = sumGx / gxBuffer.length;
+      const Gy = sumGy / gyBuffer.length;
+
+      // スコアリング処理 (前方学習済み かつ 12km/h以上で移動中)
       if (isMoving && isVecFInitialized) {
         const currentGMag = Math.sqrt(Gx*Gx + Gy*Gy);
         
@@ -661,7 +695,8 @@
       
       const statusEl = document.getElementById('calib-status');
       statusEl.style.color = 'var(--warning)';
-      statusEl.innerText = '⚠️ 前方方向を学習中...（直進加速してください）';
+      statusEl.innerText = '⚠️ 前方方向を学習中...（15km/h以上で直進加速してください）';
+      document.getElementById('speed-status').innerText = '';
       
       updateScoreUI();
       document.getElementById('alert-box').classList.remove('show');
