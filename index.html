@@ -34,7 +34,7 @@
       display: flex;
       flex-direction: column;
       height: 100vh;
-      height: 100dvh; /* 【修正1】ビューポートの動的調整 */
+      height: 100dvh; 
       overflow: hidden;
     }
 
@@ -45,9 +45,7 @@
       height: 100%;
       width: 100%;
       padding: 20px;
-      /* 【修正3】セーフエリア（下部余白）の確保 */
       padding-bottom: calc(40px + env(safe-area-inset-bottom));
-      /* 【修正2】コンテナのスクロール許可 */
       overflow-y: auto;
       animation: fadeIn 0.3s ease;
     }
@@ -371,7 +369,7 @@
 
     // 定数
     const G_THRESHOLD = 0.4; // エラー1の閾値(G)
-    const JERK_THRESHOLD = 0.5; // エラー2の閾値(G/s)
+    const JERK_THRESHOLD = 1.2; // 【変更】エラー2の閾値(G/s) を 0.5 から 1.2 に変更
     const SPEED_THRESHOLD = 12.0; // 記録有効とする最低速度(km/h) (徐行・駐車場スキップ)
     
     const realtimeCanvas = document.getElementById('canvas-realtime-g');
@@ -664,11 +662,13 @@
           isPenaltyNow = true;
         }
 
-        // エラー2: 躍度 (ジャーク)
-        const jerk = Math.sqrt(Math.pow(Gx - lastGx, 2) + Math.pow(Gy - lastGy, 2)) / dt;
-        if (jerk > JERK_THRESHOLD) {
-          error2Amount += dt;
-          isPenaltyNow = true;
+        // 【変更】エラー2: 躍度 (ジャーク) - 0.15G以上の場合のみ判定 (不感帯の導入)
+        if (currentGMag > 0.15) {
+          const jerk = Math.sqrt(Math.pow(Gx - lastGx, 2) + Math.pow(Gy - lastGy, 2)) / dt;
+          if (jerk > JERK_THRESHOLD) {
+            error2Amount += dt;
+            isPenaltyNow = true;
+          }
         }
         
         // ペナルティ地点の記録（2秒のクールダウン）
