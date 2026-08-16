@@ -34,6 +34,7 @@
       display: flex;
       flex-direction: column;
       height: 100vh;
+      height: 100dvh; /* 【修正1】ビューポートの動的調整 */
       overflow: hidden;
     }
 
@@ -44,6 +45,10 @@
       height: 100%;
       width: 100%;
       padding: 20px;
+      /* 【修正3】セーフエリア（下部余白）の確保 */
+      padding-bottom: calc(40px + env(safe-area-inset-bottom));
+      /* 【修正2】コンテナのスクロール許可 */
+      overflow-y: auto;
       animation: fadeIn 0.3s ease;
     }
     .view.active {
@@ -176,7 +181,6 @@
     .scrollable {
       flex: 1;
       overflow-y: auto;
-      padding-bottom: 20px;
       display: flex;
       flex-direction: column;
     }
@@ -357,8 +361,8 @@
     let error2Amount = 0; 
     let gHistory = []; 
     let routeHistory = []; 
-    let penaltyLocations = []; // 【追加】ペナルティ発生地点の記録
-    let lastPenaltyTime = 0;   // 【追加】連続記録を防ぐためのタイムスタンプ
+    let penaltyLocations = []; // ペナルティ発生地点の記録
+    let lastPenaltyTime = 0;   // 連続記録を防ぐためのタイムスタンプ
     let lastPlotTime = 0;
     
     // アニメーション・WakeLock
@@ -652,7 +656,7 @@
       // スコアリング処理 (前方学習済み かつ 12km/h以上で移動中)
       if (isMoving && isVecFInitialized) {
         const currentGMag = Math.sqrt(Gx*Gx + Gy*Gy);
-        let isPenaltyNow = false; // 【追加】ペナルティフラグ
+        let isPenaltyNow = false; // ペナルティフラグ
         
         // エラー1: 振幅
         if (currentGMag > G_THRESHOLD) {
@@ -667,7 +671,7 @@
           isPenaltyNow = true;
         }
         
-        // 【追加】ペナルティ地点の記録（2秒のクールダウン）
+        // ペナルティ地点の記録（2秒のクールダウン）
         if (isPenaltyNow && lastPosition && (now - lastPenaltyTime > 2000)) {
           penaltyLocations.push({ lat: lastPosition.lat, lon: lastPosition.lon });
           lastPenaltyTime = now;
@@ -915,7 +919,7 @@
       });
       ctx.stroke();
 
-      // 【追加】ペナルティ地点のマッピング (赤いドット)
+      // ペナルティ地点のマッピング (赤いドット)
       if (penaltyLocations.length > 0) {
         ctx.fillStyle = 'rgba(239, 68, 68, 0.8)'; // 半透明の赤
         penaltyLocations.forEach(p => {
