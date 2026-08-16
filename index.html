@@ -294,6 +294,10 @@
         <h2>走行ルート</h2>
         <p class="label mb-4">GPSの相対軌跡</p>
         <canvas id="canvas-route" width="300" height="300"></canvas>
+        <!-- 凡例を追加 -->
+        <p class="label mt-4" style="font-size: 0.75rem; text-align: center;">
+          <span style="color: #ef4444;">●</span>：急操作による減点ポイント
+        </p>
       </div>
       
       <button class="btn btn-primary mt-4" onclick="resetApp()">TOPへ戻る</button>
@@ -353,6 +357,8 @@
     let error2Amount = 0; 
     let gHistory = []; 
     let routeHistory = []; 
+    let penaltyLocations = []; // 【追加】ペナルティ発生地点の記録
+    let lastPenaltyTime = 0;   // 【追加】連続記録を防ぐためのタイムスタンプ
     let lastPlotTime = 0;
     
     // アニメーション・WakeLock
@@ -362,7 +368,7 @@
     // 定数
     const G_THRESHOLD = 0.4; // エラー1の閾値(G)
     const JERK_THRESHOLD = 0.5; // エラー2の閾値(G/s)
-    const SPEED_THRESHOLD = 12.0; // 【変更】記録有効とする最低速度(km/h) (徐行・駐車場スキップ)
+    const SPEED_THRESHOLD = 12.0; // 記録有効とする最低速度(km/h) (徐行・駐車場スキップ)
     
     const realtimeCanvas = document.getElementById('canvas-realtime-g');
     const realtimeCtx = realtimeCanvas.getContext('2d');
@@ -431,6 +437,8 @@
       error2Amount = 0;
       gHistory = [];
       routeHistory = [];
+      penaltyLocations = []; // 初期化
+      lastPenaltyTime = 0;   // 初期化
       lastPosition = null;
       lastSpeed_ms = 0;
       isAccelerating = false;
@@ -593,7 +601,6 @@
       const vecM = vSub(rawAcc, vecG);
 
       // 2. Y軸（前方）の連続学習：【極めて遅いフィルター】
-      // 【変更】条件の厳格化：GPS速度が15km/h以上 かつ 一定の加速度がある時のみ学習
       if (isAccelerating && currentSpeed >= 15.0) {
         const mDotZ = vDot(vecM, vecZ);
         const vecMh = vSub(vecM, vScale(vecZ, mDotZ));
@@ -645,18 +652,27 @@
       // スコアリング処理 (前方学習済み かつ 12km/h以上で移動中)
       if (isMoving && isVecFInitialized) {
         const currentGMag = Math.sqrt(Gx*Gx + Gy*Gy);
+        let isPenaltyNow = false; // 【追加】ペナルティフラグ
         
         // エラー1: 振幅
         if (currentGMag > G_THRESHOLD) {
           error1Amount += dt;
+          isPenaltyNow = true;
         }
 
         // エラー2: 躍度 (ジャーク)
         const jerk = Math.sqrt(Math.pow(Gx - lastGx, 2) + Math.pow(Gy - lastGy, 2)) / dt;
         if (jerk > JERK_THRESHOLD) {
           error2Amount += dt;
+          isPenaltyNow = true;
         }
         
+        // 【追加】ペナルティ地点の記録（2秒のクールダウン）
+        if (isPenaltyNow && lastPosition && (now - lastPenaltyTime > 2000)) {
+          penaltyLocations.push({ lat: lastPosition.lat, lon: lastPosition.lon });
+          lastPenaltyTime = now;
+        }
+
         calculateScore();
       }
 
@@ -883,6 +899,7 @@
       const offsetX = (w - aspectLon * scale) / 2;
       const offsetY = (h - dLat * scale) / 2;
 
+      // メインのルート描画 (緑線)
       ctx.strokeStyle = '#10b981';
       ctx.lineWidth = 4;
       ctx.lineCap = 'round';
@@ -898,6 +915,19 @@
       });
       ctx.stroke();
 
+      // 【追加】ペナルティ地点のマッピング (赤いドット)
+      if (penaltyLocations.length > 0) {
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.8)'; // 半透明の赤
+        penaltyLocations.forEach(p => {
+          const px = offsetX + (p.lon - minLon) * cosLat * scale;
+          const py = h - (offsetY + (p.lat - minLat) * scale);
+          ctx.beginPath();
+          ctx.arc(px, py, 5, 0, Math.PI * 2); // 半径5px
+          ctx.fill();
+        });
+      }
+
+      // スタート地点とゴール地点のマーク
       const first = routeHistory[0];
       const last = routeHistory[routeHistory.length - 1];
       
