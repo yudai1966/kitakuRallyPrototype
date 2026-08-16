@@ -14,6 +14,7 @@
       --accent-hover: #2563eb;
       --danger: #ef4444;
       --success: #10b981;
+      --warning: #f59e0b;
       --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
 
@@ -65,7 +66,7 @@
     .card {
       background-color: var(--surface-color);
       border-radius: 16px;
-      padding: 16px; /* 少しパディングを減らす */
+      padding: 16px;
       margin-bottom: 12px;
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     }
@@ -91,7 +92,7 @@
       cursor: pointer;
       transition: background-color 0.2s, transform 0.1s;
       margin-top: auto;
-      flex-shrink: 0; /* ボタンが潰れないように */
+      flex-shrink: 0;
     }
     .btn:active { transform: scale(0.98); }
     .btn-primary { background-color: var(--accent); }
@@ -102,17 +103,27 @@
     .score-container {
       text-align: center;
       padding: 20px 0;
+      position: relative;
     }
     .score-value {
-      font-size: 4rem; /* 画面に収まるように少し小さく */
+      font-size: 4rem;
       font-weight: 800;
       line-height: 1;
       color: var(--success);
       text-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
       transition: color 0.3s;
     }
-    .score-value.warning { color: #f59e0b; text-shadow: 0 0 20px rgba(245, 158, 11, 0.4); }
+    .score-value.warning { color: var(--warning); text-shadow: 0 0 20px rgba(245, 158, 11, 0.4); }
     .score-value.danger { color: var(--danger); text-shadow: 0 0 20px rgba(239, 68, 68, 0.4); }
+
+    /* Calibration Status */
+    #calib-status {
+      font-size: 0.75rem;
+      color: var(--warning);
+      font-weight: bold;
+      text-align: center;
+      margin-top: 8px;
+    }
 
     /* Alert Box */
     .alert {
@@ -143,15 +154,15 @@
       padding: 12px;
     }
     canvas {
-      background-color: var(--bg-color); /* キャンバスの背景を暗く */
-      border-radius: 50%; /* 円形にする */
+      background-color: var(--bg-color);
+      border-radius: 50%;
       width: 100%;
-      max-width: 220px; /* リアルタイム画面用に小さめに調整 */
+      max-width: 220px;
       aspect-ratio: 1 / 1;
       border: 2px solid #334155;
     }
     #canvas-route {
-      border-radius: 12px; /* ルートは四角のまま */
+      border-radius: 12px;
       background-color: var(--surface-color);
     }
     
@@ -175,6 +186,7 @@
       font-size: 0.8rem;
       color: var(--text-sub);
       margin-top: 8px;
+      font-variant-numeric: tabular-nums;
     }
   </style>
 </head>
@@ -184,16 +196,16 @@
   <div id="view-start" class="view active">
     <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;">
       <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem;">G-Score Drive</h1>
-      <p style="color: var(--text-sub); text-align: center; margin-bottom: 2rem;">
+      <p style="color: var(--text-sub); text-align: center; margin-bottom: 1.5rem;">
         あなたの運転の滑らかさを<br>GセンサーとGPSで採点します。
       </p>
       
       <div class="card" style="width: 100%; max-width: 320px;">
         <h2 style="font-size: 1rem; color: var(--accent);">使い方</h2>
         <ul style="font-size: 0.875rem; color: var(--text-sub); padding-left: 20px; line-height: 1.8;">
-          <li>スマホをホルダー等に固定してください。</li>
-          <li>START後にスマホを動かすと記録が一時停止します。</li>
-          <li>急加速・急ブレーキ・急ハンドルで減点されます。</li>
+          <li>スマホの向きは自由です。自動的にクルマの前後を学習します。</li>
+          <li>START後、直進・加速することで前方向を学習します。</li>
+          <li>落下等の衝撃を検知すると一時的に記録を停止します。</li>
         </ul>
       </div>
     </div>
@@ -208,12 +220,13 @@
       <h1 style="margin-bottom: 8px;">Driving...</h1>
       
       <div id="alert-box" class="alert">
-        ⚠️ スマホが動きました！固定してください。（記録一時停止中）
+        ⚠️ 異常な衝撃を検知！記録を一時停止しています。
       </div>
 
       <div class="card score-container" style="padding: 10px 0;">
         <div class="label">現在のGスコア</div>
         <div id="current-score" class="score-value">100</div>
+        <div id="calib-status">⚠️ 前方方向を学習中...（直進加速してください）</div>
       </div>
 
       <div class="grid-2">
@@ -227,13 +240,12 @@
         </div>
       </div>
 
-      <!-- リアルタイム摩擦円 -->
       <div class="card canvas-container" style="flex: 1; justify-content: center;">
         <div class="label" style="text-align: center; margin-bottom: 4px;">リアルタイムGモニター</div>
         <canvas id="canvas-realtime-g" width="220" height="220"></canvas>
         <div class="g-values">
-          <span>Lat: <span id="val-g-x">0.00</span>G</span>
-          <span>Lon: <span id="val-g-y">0.00</span>G</span>
+          <span>左右: <span id="val-g-x">0.00</span>G</span>
+          <span>前後: <span id="val-g-y">0.00</span>G</span>
         </div>
       </div>
     </div>
@@ -283,15 +295,35 @@
 
   <!-- ==================== JAVASCRIPT ==================== -->
   <script>
+    // --- Vector Math Utilities ---
+    const vMag = v => Math.sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+    const vNorm = v => { const m = vMag(v); return m === 0 ? {x:0, y:0, z:0} : {x: v.x/m, y: v.y/m, z: v.z/m}; };
+    const vAdd = (a, b) => ({x: a.x+b.x, y: a.y+b.y, z: a.z+b.z});
+    const vSub = (a, b) => ({x: a.x-b.x, y: a.y-b.y, z: a.z-b.z});
+    const vScale = (v, s) => ({x: v.x*s, y: v.y*s, z: v.z*s});
+    const vDot = (a, b) => a.x*b.x + a.y*b.y + a.z*b.z;
+    const vCross = (a, b) => ({
+      x: a.y*b.z - a.z*b.y,
+      y: a.z*b.x - a.x*b.z,
+      z: a.x*b.y - a.y*b.x
+    });
+
     // --- State Variables ---
     let isRecording = false;
     let score = 100.0;
     
-    // センサーデータ
+    // Continuous Dynamic Calibration State
     let lastTime = 0;
-    let gravity = { x: 0, y: 0, z: 9.81 }; // 重力ベクトルのローパス用
-    let isStable = true;
-    let unstableTimer = 0;
+    let vecG = { x: 0, y: 0, z: 9.81 }; // 重力ベクトル (Z軸)
+    let vecF = { x: 0, y: 1, z: 0 };    // 前方ベクトル (Y軸)
+    let isVecFInitialized = false;      // 前方ベクトルが初期化されたか
+    let lastRawAcc = null;              // ジャーク計算用
+    
+    // サスペンド (衝撃検知)
+    let suspendTimer = 0;
+    const SUSPEND_DURATION = 3.0; // 秒
+
+    // Output G
     let lastGx = 0, lastGy = 0;
     
     // GPSデータ
@@ -299,27 +331,29 @@
     let lastPosition = null;
     let totalDistance = 0; // km
     let currentSpeed = 0; // km/h
-    let isMoving = false; // 速度が一定以上か
+    let isMoving = false;
+    let lastSpeed_ms = 0;
+    let isAccelerating = false; // GPSから算出した加速フラグ
     
     // 記録用
-    let error1Amount = 0; // 振幅ペナルティ蓄積
-    let error2Amount = 0; // 躍度ペナルティ蓄積
-    let gHistory = []; // {x, y} 摩擦円描画用
-    let routeHistory = []; // {lat, lon} ルート描画用
+    let error1Amount = 0; 
+    let error2Amount = 0; 
+    let gHistory = []; 
+    let routeHistory = []; 
     let lastPlotTime = 0;
     
-    // アニメーション用
+    // アニメーション・WakeLock
     let animationFrameId = null;
+    let wakeLock = null;
 
     // 定数
     const G_THRESHOLD = 0.4; // エラー1の閾値(G)
     const JERK_THRESHOLD = 0.5; // エラー2の閾値(G/s)
     const SPEED_THRESHOLD = 5.0; // 記録有効とする最低速度(km/h)
     
-    // リアルタイム描画用キャンバス
     const realtimeCanvas = document.getElementById('canvas-realtime-g');
     const realtimeCtx = realtimeCanvas.getContext('2d');
-    const RT_SCALE = (realtimeCanvas.width / 2 * 0.8) / G_THRESHOLD; // 0.4Gが半径の80%になるように
+    const RT_SCALE = (realtimeCanvas.width / 2 * 0.8) / G_THRESHOLD; 
 
     // --- View Navigation ---
     function switchView(viewId) {
@@ -327,10 +361,32 @@
       document.getElementById(viewId).classList.add('active');
     }
 
+    // --- Wake Lock API ---
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+        }
+      } catch (err) {
+        console.warn(`Wake Lock error: ${err.name}, ${err.message}`);
+      }
+    }
+    
+    function releaseWakeLock() {
+      if (wakeLock !== null) {
+        wakeLock.release().then(() => { wakeLock = null; });
+      }
+    }
+
+    document.addEventListener('visibilitychange', async () => {
+      if (wakeLock !== null && document.visibilityState === 'visible' && isRecording) {
+        await requestWakeLock();
+      }
+    });
+
     // --- App Lifecycle ---
     async function requestPermissionsAndStart() {
       try {
-        // DeviceMotion (iOS 13+)
         if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
           const permissionState = await DeviceMotionEvent.requestPermission();
           if (permissionState !== 'granted') {
@@ -339,19 +395,18 @@
           }
         }
         
-        // Geolocation
         if (!navigator.geolocation) {
           alert('GPSがサポートされていません。');
           return;
         }
 
-        // Start
         resetData();
         switchView('view-running');
+        await requestWakeLock();
         startSensors();
         startAnimationLoop();
       } catch (err) {
-        alert('権限の取得中にエラーが発生しました: ' + err.message);
+        alert('エラーが発生しました: ' + err.message);
       }
     }
 
@@ -364,45 +419,49 @@
       gHistory = [];
       routeHistory = [];
       lastPosition = null;
-      gravity = null; // 初回に生データで初期化する
-      isStable = true;
-      unstableTimer = 0;
+      lastSpeed_ms = 0;
+      isAccelerating = false;
+      
+      // キャリブレーションの初期化
+      vecG = { x: 0, y: 0, z: 9.81 };
+      vecF = { x: 0, y: 1, z: 0 };
+      isVecFInitialized = false;
+      lastRawAcc = null;
+      suspendTimer = 0;
+      
       lastGx = 0;
       lastGy = 0;
       lastPlotTime = performance.now();
+      
       updateRunningUI();
-      drawRealtimeCircleInit(); // キャンバス初期化
+      drawRealtimeCircleInit(); 
     }
 
     function startSensors() {
       isRecording = true;
       lastTime = performance.now();
       
-      // GPS Watch
       watchId = navigator.geolocation.watchPosition(
         handleGPS, 
         (err) => console.warn('GPS Error:', err), 
         { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
       );
       
-      // Motion Listener
       window.addEventListener('devicemotion', handleMotion, true);
     }
 
     function stopRecording() {
       isRecording = false;
       
-      // Stop Sensors
       if (watchId !== null) navigator.geolocation.clearWatch(watchId);
       window.removeEventListener('devicemotion', handleMotion, true);
       
-      // Stop Animation Loop
       if (animationFrameId !== null) {
         cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
       }
       
-      // Show Results
+      releaseWakeLock();
       switchView('view-result');
       renderResults();
     }
@@ -411,45 +470,54 @@
       switchView('view-start');
     }
 
-    // --- Core Logic: GPS ---
+    // --- Core Logic: GPS & Acceleration Detection ---
     function handleGPS(position) {
       if (!isRecording) return;
       
       const coords = position.coords;
       const lat = coords.latitude;
       const lon = coords.longitude;
+      const now = position.timestamp;
       
-      // ルート記録
       routeHistory.push({ lat, lon });
 
-      // 速度・距離の計算
+      let currentSpeed_ms = 0;
+
       if (lastPosition) {
         const d = getDistanceFromLatLonInKm(lastPosition.lat, lastPosition.lon, lat, lon);
         totalDistance += d;
         
-        // 速度算出 (m/s -> km/h)
         if (coords.speed !== null && !isNaN(coords.speed)) {
-          currentSpeed = coords.speed * 3.6;
+          currentSpeed_ms = coords.speed;
         } else {
-          // Fallback: 手動計算
-          const dt_h = (position.timestamp - lastPosition.timestamp) / 3600000;
-          if (dt_h > 0) currentSpeed = d / dt_h;
+          const dt_h = (now - lastPosition.timestamp) / 3600000;
+          if (dt_h > 0) currentSpeed_ms = (d / dt_h) * (1000 / 3600); // km/h -> m/s
+        }
+        
+        // GPS速度から加速度を計算 (m/s^2)
+        const dt_s = (now - lastPosition.timestamp) / 1000;
+        if (dt_s > 0) {
+          const accel_ms2 = (currentSpeed_ms - lastSpeed_ms) / dt_s;
+          isAccelerating = accel_ms2 > 0.5; // 約0.05G以上で加速中と判定
         }
       } else {
-        lastPosition = { lat, lon, timestamp: position.timestamp };
+        if (coords.speed !== null && !isNaN(coords.speed)) {
+          currentSpeed_ms = coords.speed;
+        }
       }
       
-      lastPosition = { lat, lon, timestamp: position.timestamp };
+      lastPosition = { lat, lon, timestamp: now };
+      lastSpeed_ms = currentSpeed_ms;
+      currentSpeed = currentSpeed_ms * 3.6;
       isMoving = currentSpeed > SPEED_THRESHOLD;
       
-      // UI Update
       document.getElementById('current-speed').innerText = Math.round(currentSpeed);
       document.getElementById('total-distance').innerText = totalDistance.toFixed(2);
       updateScoreUI();
     }
 
     function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
-      const R = 6371; // km
+      const R = 6371; 
       const dLat = (lat2 - lat1) * Math.PI / 180;
       const dLon = (lon2 - lon1) * Math.PI / 180;
       const a = 
@@ -459,100 +527,97 @@
       return R * c;
     }
 
-    // --- Core Logic: Motion & Calibration ---
+    // --- Core Logic: Continuous Dynamic Calibration ---
     function handleMotion(e) {
       if (!isRecording) return;
       
       const now = performance.now();
       let dt = (now - lastTime) / 1000.0;
       lastTime = now;
-      if (dt > 1.0 || dt <= 0) dt = 0.05; // 異常値クリップ
+      if (dt > 1.0 || dt <= 0) dt = 0.02; // フォールバック
 
       const acc = e.accelerationIncludingGravity;
       if (!acc || acc.x === null) return;
       
-      const rawX = acc.x;
-      const rawY = acc.y;
-      const rawZ = acc.z;
-      
-      // 初期化
-      if (!gravity) {
-        gravity = { x: rawX, y: rawY, z: rawZ };
+      const rawAcc = { x: acc.x, y: acc.y, z: acc.z };
+
+      // 外乱（落下等）検知: 前フレームからの急激なベクトルの変化
+      if (lastRawAcc) {
+        const dAcc = vSub(rawAcc, lastRawAcc);
+        const diffG = vMag(dAcc) / 9.81;
+        if (diffG > 2.0) { // 2.0G以上の瞬間的な変動
+          suspendTimer = SUSPEND_DURATION;
+        }
+      }
+      lastRawAcc = rawAcc;
+
+      // サスペンド状態の処理
+      if (suspendTimer > 0) {
+        suspendTimer -= dt;
+        document.getElementById('alert-box').classList.add('show');
+        lastGx = 0; lastGy = 0; // 記録無効として扱う
         return;
       }
+      document.getElementById('alert-box').classList.remove('show');
 
-      // 1. スマホ操作検知（姿勢の急変チェック）
-      const rawMag = Math.sqrt(rawX*rawX + rawY*rawY + rawZ*rawZ);
-      const gravMag = Math.sqrt(gravity.x*gravity.x + gravity.y*gravity.y + gravity.z*gravity.z);
-      
-      if (rawMag > 0 && gravMag > 0) {
-        const dot = (gravity.x*rawX + gravity.y*rawY + gravity.z*rawZ) / (gravMag * rawMag);
-        if (dot < 0.95) { // 約18度以上の急なズレ
-          isStable = false;
-          unstableTimer = 0;
-          document.getElementById('alert-box').classList.add('show');
+      // 1. Z軸（真下＝重力）の連続更新：【速いフィルター】
+      const alpha = 0.95; 
+      vecG = vAdd(vScale(vecG, alpha), vScale(rawAcc, 1 - alpha));
+      const vecZ = vNorm(vecG);
+
+      // 運動加速度ベクトル M = A - G
+      const vecM = vSub(rawAcc, vecG);
+
+      // 2. Y軸（前方）の連続学習：【極めて遅いフィルター】
+      if (isAccelerating) {
+        // Mを重力に直交する水平面に射影 M_h = M - (M・Z)Z
+        const mDotZ = vDot(vecM, vecZ);
+        const vecMh = vSub(vecM, vScale(vecZ, mDotZ));
+        
+        // 加速度が小さすぎる場合はノイズなので無視
+        if (vMag(vecMh) > 0.3) { 
+          // クルマが前に加速すると、スマホには後ろ向きの力がかかるため、逆ベクトルが前
+          const fInst = vNorm(vScale(vecMh, -1));
+          
+          if (!isVecFInitialized) {
+            vecF = fInst; // 初回は直接代入
+            isVecFInitialized = true;
+            document.getElementById('calib-status').style.color = 'var(--success)';
+            document.getElementById('calib-status').innerText = '✅ 姿勢キャリブレーション有効';
+          } else {
+            const beta = 0.995; // じわじわ学習
+            vecF = vNorm(vAdd(vScale(vecF, beta), vScale(fInst, 1 - beta)));
+          }
         }
       }
 
-      // 2. ローパスフィルタによる重力方向の更新
-      const alpha = 0.98; 
-      gravity.x = alpha * gravity.x + (1 - alpha) * rawX;
-      gravity.y = alpha * gravity.y + (1 - alpha) * rawY;
-      gravity.z = alpha * gravity.z + (1 - alpha) * rawZ;
-
-      if (!isStable) {
-        unstableTimer += dt;
-        if (unstableTimer > 2.0) { 
-          isStable = true;
-          document.getElementById('alert-box').classList.remove('show');
-        }
-        // 不安定時も値は更新するが、スコアには影響させない
+      // 3. 直交座標系（基底ベクトル）の動的生成
+      // vecR (右) = vecF × vecZ
+      let vecR = vCross(vecF, vecZ);
+      if (vMag(vecR) < 0.001) {
+        // vecFとvecZがほぼ平行な場合の安全対策
+        vecR = vNorm(vCross({x:1, y:0, z:0}, vecZ));
+      } else {
+        vecR = vNorm(vecR);
       }
+      // 真の前方 vecF_ortho = vecZ × vecR
+      const vecF_ortho = vNorm(vCross(vecZ, vecR));
 
-      // 3. 座標変換（水平Gの抽出）
-      const newGravMag = Math.sqrt(gravity.x*gravity.x + gravity.y*gravity.y + gravity.z*gravity.z);
-      if (newGravMag < 0.1) return;
-      const z_hat = { x: gravity.x/newGravMag, y: gravity.y/newGravMag, z: gravity.z/newGravMag };
+      // 4. スコアへの変換
+      // Mを各軸に射影 (単位: G)
+      const Gx = vDot(vecM, vecR) / 9.81; // 左右 (右が正)
+      const Gy = vDot(vecM, vecF_ortho) / 9.81; // 前後 (前が正)
 
-      let y_tmp = { x: 0, y: 1, z: 0 };
-      let x_hat = {
-        x: y_tmp.y*z_hat.z - y_tmp.z*z_hat.y,
-        y: y_tmp.z*z_hat.x - y_tmp.x*z_hat.z,
-        z: y_tmp.x*z_hat.y - y_tmp.y*z_hat.x
-      };
-      let xMag = Math.sqrt(x_hat.x*x_hat.x + x_hat.y*x_hat.y + x_hat.z*x_hat.z);
-      if (xMag < 0.001) { 
-        y_tmp = { x: 1, y: 0, z: 0 };
-        x_hat = {
-          x: y_tmp.y*z_hat.z - y_tmp.z*z_hat.y,
-          y: y_tmp.z*z_hat.x - y_tmp.x*z_hat.z,
-          z: y_tmp.x*z_hat.y - y_tmp.y*z_hat.x
-        };
-        xMag = Math.sqrt(x_hat.x*x_hat.x + x_hat.y*x_hat.y + x_hat.z*x_hat.z);
-      }
-      x_hat.x /= xMag; x_hat.y /= xMag; x_hat.z /= xMag;
-
-      const y_hat = {
-        x: z_hat.y*x_hat.z - z_hat.z*x_hat.y,
-        y: z_hat.z*x_hat.x - z_hat.x*x_hat.z,
-        z: z_hat.x*x_hat.y - z_hat.y*x_hat.x
-      };
-
-      const mx = rawX - gravity.x;
-      const my = rawY - gravity.y;
-      const mz = rawZ - gravity.z;
-
-      const Gx = (mx * x_hat.x + my * x_hat.y + mz * x_hat.z) / 9.81;
-      const Gy = (mx * y_hat.x + my * y_hat.y + mz * y_hat.z) / 9.81;
-
-      // 4. スコアリング処理
-      if (isMoving && isStable) {
+      // スコアリング処理 (前方学習が済んでいて、移動中のみ)
+      if (isMoving && isVecFInitialized) {
         const currentGMag = Math.sqrt(Gx*Gx + Gy*Gy);
         
+        // エラー1: 振幅
         if (currentGMag > G_THRESHOLD) {
           error1Amount += dt;
         }
 
+        // エラー2: 躍度 (ジャーク)
         const jerk = Math.sqrt(Math.pow(Gx - lastGx, 2) + Math.pow(Gy - lastGy, 2)) / dt;
         if (jerk > JERK_THRESHOLD) {
           error2Amount += dt;
@@ -564,8 +629,8 @@
       lastGx = Gx;
       lastGy = Gy;
 
-      // 5. 履歴の記録 (10Hz程度に間引き)
-      if (now - lastPlotTime > 100) {
+      // 描画用履歴の記録
+      if (now - lastPlotTime > 100 && suspendTimer <= 0) {
         lastPlotTime = now;
         if (gHistory.length < 5000) {
            gHistory.push({ x: Gx, y: Gy });
@@ -593,6 +658,11 @@
     function updateRunningUI() {
       document.getElementById('current-speed').innerText = '0';
       document.getElementById('total-distance').innerText = '0.00';
+      
+      const statusEl = document.getElementById('calib-status');
+      statusEl.style.color = 'var(--warning)';
+      statusEl.innerText = '⚠️ 前方方向を学習中...（直進加速してください）';
+      
       updateScoreUI();
       document.getElementById('alert-box').classList.remove('show');
     }
@@ -617,55 +687,50 @@
       const cx = w / 2;
       const cy = h / 2;
 
-      // 背景クリアとグリッド描画
       realtimeCtx.clearRect(0, 0, w, h);
       drawGrid(realtimeCtx, w, h, RT_SCALE);
 
-      // 履歴（軌跡）の描画
       if (gHistory.length > 0) {
-        realtimeCtx.strokeStyle = 'rgba(59, 130, 246, 0.3)'; // 薄い青
+        realtimeCtx.strokeStyle = 'rgba(59, 130, 246, 0.3)';
         realtimeCtx.lineWidth = 2;
         realtimeCtx.lineJoin = 'round';
         realtimeCtx.beginPath();
         
-        // 最新の直近50点くらいを少し濃く描画するなどしてもよいが、シンプルに全部描く
-        const startIdx = Math.max(0, gHistory.length - 200); // 過去200点（約20秒分）を表示
+        const startIdx = Math.max(0, gHistory.length - 200); 
         for (let i = startIdx; i < gHistory.length; i++) {
           const p = gHistory[i];
           const px = cx + p.x * RT_SCALE;
-          const py = cy - p.y * RT_SCALE; // Yは上が正なので反転
+          const py = cy - p.y * RT_SCALE; 
           if (i === startIdx) realtimeCtx.moveTo(px, py);
           else realtimeCtx.lineTo(px, py);
         }
         realtimeCtx.stroke();
       }
 
-      // 現在位置（赤い点）の描画
-      const px = cx + lastGx * RT_SCALE;
-      const py = cy - lastGy * RT_SCALE;
-      const gMag = Math.sqrt(lastGx*lastGx + lastGy*lastGy);
+      // サスペンド中でなければ現在のGを描画
+      if (suspendTimer <= 0) {
+        const px = cx + lastGx * RT_SCALE;
+        const py = cy - lastGy * RT_SCALE;
+        const gMag = Math.sqrt(lastGx*lastGx + lastGy*lastGy);
+        
+        realtimeCtx.fillStyle = gMag > G_THRESHOLD ? '#ef4444' : '#3b82f6';
+        realtimeCtx.beginPath();
+        realtimeCtx.arc(px, py, 6, 0, Math.PI * 2);
+        realtimeCtx.fill();
+      }
       
-      realtimeCtx.fillStyle = gMag > G_THRESHOLD ? '#ef4444' : '#3b82f6'; // 閾値超えで赤く
-      realtimeCtx.beginPath();
-      realtimeCtx.arc(px, py, 6, 0, Math.PI * 2);
-      realtimeCtx.fill();
-      
-      // 値の更新
-      document.getElementById('val-g-x').innerText = lastGx.toFixed(2);
-      document.getElementById('val-g-y').innerText = lastGy.toFixed(2);
+      document.getElementById('val-g-x').innerText = (lastGx > 0 ? '+' : '') + lastGx.toFixed(2);
+      document.getElementById('val-g-y').innerText = (lastGy > 0 ? '+' : '') + lastGy.toFixed(2);
     }
 
-    // 共通のグリッド描画関数
     function drawGrid(ctx, w, h, scale) {
       const cx = w / 2;
       const cy = h / 2;
       
       ctx.lineWidth = 1;
       
-      // 0.2G, 0.4G 円
       [0.2, 0.4].forEach(g => {
         ctx.beginPath();
-        // 0.4Gは赤色で警告
         ctx.strokeStyle = g === 0.4 ? 'rgba(239, 68, 68, 0.6)' : 'rgba(148, 163, 184, 0.2)';
         ctx.setLineDash(g === 0.4 ? [] : [4, 4]);
         ctx.arc(cx, cy, g * scale, 0, Math.PI * 2);
@@ -673,14 +738,12 @@
       });
       ctx.setLineDash([]);
 
-      // 十字軸
       ctx.strokeStyle = 'rgba(148, 163, 184, 0.2)';
       ctx.beginPath();
       ctx.moveTo(cx, 0); ctx.lineTo(cx, h);
       ctx.moveTo(0, cy); ctx.lineTo(w, cy);
       ctx.stroke();
       
-      // ラベル
       ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
@@ -695,7 +758,6 @@
 
     // --- Canvas Rendering (Result) ---
     function renderResults() {
-      // Text
       const finalScoreEl = document.getElementById('final-score');
       const s = Math.round(score);
       finalScoreEl.innerText = s;
@@ -707,7 +769,8 @@
       document.getElementById('result-error-time').innerText = (error1Amount + error2Amount).toFixed(1);
 
       const commentEl = document.getElementById('score-comment');
-      if (s >= 95) commentEl.innerText = '完璧なプロフェッショナル運転です！';
+      if (!isVecFInitialized) commentEl.innerText = '有効な加速がなく、計測できませんでした。';
+      else if (s >= 95) commentEl.innerText = '完璧なプロフェッショナル運転です！';
       else if (s >= 80) commentEl.innerText = '滑らかで安全な運転です。';
       else if (s >= 60) commentEl.innerText = '少し急な操作が目立ちます。ゆとりを持ちましょう。';
       else commentEl.innerText = 'G変化が大きすぎます。同乗者が酔うレベルです。';
@@ -729,7 +792,6 @@
       ctx.clearRect(0, 0, w, h);
       drawGrid(ctx, w, h, scale);
 
-      // データプロット（全履歴）
       if (gHistory.length > 0) {
         ctx.strokeStyle = 'rgba(59, 130, 246, 0.5)';
         ctx.lineWidth = 1.5;
