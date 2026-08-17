@@ -723,8 +723,8 @@
           isPenaltyNow = true;
         }
 
-        // 【修正】デッドゾーンを0.04Gに縮小（繊細なペダル操作も評価対象に）
-        if (currentGMag > 0.04) {
+        // 【修正1】デッドゾーンを0.06Gに変更
+        if (currentGMag > 0.06) {
           currentJerk = Math.sqrt(Math.pow(Gx - lastGx, 2) + Math.pow(Gy - lastGy, 2)) / dt;
           if (currentJerk > JERK_THRESHOLD) {
             error2Amount += dt;
@@ -754,8 +754,8 @@
 
     function calculateScore() {
       const denom = Math.max(totalDistance, 0.1);
-      // 【適用】ペナルティ係数を (error1: 20.0, error2: 30.0) に変更して厳しく設定
-      const penalty = (error1Amount * 20.0 + error2Amount * 30.0) / denom;
+      // 【修正2】ペナルティ係数を適正化 (error1: 10.0, error2: 5.0) に変更
+      const penalty = (error1Amount * 10.0 + error2Amount * 5.0) / denom;
       score = Math.max(0, 100.0 - penalty);
       updateScoreUI();
     }
