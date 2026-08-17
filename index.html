@@ -392,7 +392,7 @@
 
     // 定数
     const G_THRESHOLD = 0.4; 
-    const JERK_THRESHOLD = 1.2; 
+    const JERK_THRESHOLD = 0.5; // 【修正】ジャークのペナルティ閾値を0.5に変更
     const SPEED_THRESHOLD = 12.0; 
     
     const realtimeCanvas = document.getElementById('canvas-realtime-g');
@@ -722,8 +722,8 @@
           isPenaltyNow = true;
         }
 
-        // デッドゾーン (0.15G以上でジャークを計算・記録)
-        if (currentGMag > 0.15) {
+        // 【修正】デッドゾーン (0.05G以上でジャークを計算・記録)
+        if (currentGMag > 0.05) {
           currentJerk = Math.sqrt(Math.pow(Gx - lastGx, 2) + Math.pow(Gy - lastGy, 2)) / dt;
           if (currentJerk > JERK_THRESHOLD) {
             error2Amount += dt;
@@ -824,9 +824,9 @@
           const age = i - startIdx;
           const alpha = tailLength > 0 ? (age / tailLength) * 0.9 : 0.9;
           
-          // ジャークに応じた色決定
+          // 【修正】ジャークに応じた色決定 (閾値を0.3, JERK_THRESHOLD(0.5) に変更)
           let r, g, b;
-          if (pCurr.jerk < 0.5) {
+          if (pCurr.jerk < 0.3) {
             r=59; g=130; b=246; // 青: 滑らか
           } else if (pCurr.jerk < JERK_THRESHOLD) {
             r=245; g=158; b=11; // 黄色/オレンジ: やや急
@@ -940,8 +940,10 @@
           const pyCurr = cy - pCurr.y * scale;
           
           const alpha = 0.6; // 固定の透明度
+          
+          // 【修正】リザルト画面のジャークに応じた色決定
           let r, g, b;
-          if (pCurr.jerk < 0.5) {
+          if (pCurr.jerk < 0.3) {
             r=59; g=130; b=246; 
           } else if (pCurr.jerk < JERK_THRESHOLD) {
             r=245; g=158; b=11; 
