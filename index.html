@@ -357,7 +357,7 @@
     let lastRawAcc = null;              
     
     // Moving Average Filter State
-    const MA_WINDOW_SIZE = 7; // 【修正】15 -> 7 に変更して応答性を向上
+    const MA_WINDOW_SIZE = 10; // 【修正1】10に設定（ノイズ除去と応答性の両立）
     let gxBuffer = [];
     let gyBuffer = [];
     
@@ -392,7 +392,7 @@
 
     // 定数
     const G_THRESHOLD = 0.4; 
-    const JERK_THRESHOLD = 0.35; // 【修正】ジャークのペナルティ閾値を0.35に変更
+    const JERK_THRESHOLD = 0.25; // 【修正3】ジャークのペナルティ閾値を0.25に設定
     const SPEED_THRESHOLD = 12.0; 
     
     const realtimeCanvas = document.getElementById('canvas-realtime-g');
@@ -722,8 +722,8 @@
           isPenaltyNow = true;
         }
 
-        // デッドゾーン (0.05G以上でジャークを計算・記録)
-        if (currentGMag > 0.05) {
+        // 【修正2】デッドゾーン (0.08G以上でジャークを計算・記録)
+        if (currentGMag > 0.08) {
           currentJerk = Math.sqrt(Math.pow(Gx - lastGx, 2) + Math.pow(Gy - lastGy, 2)) / dt;
           if (currentJerk > JERK_THRESHOLD) {
             error2Amount += dt;
@@ -753,7 +753,7 @@
 
     function calculateScore() {
       const denom = Math.max(totalDistance, 0.1);
-      // 【修正】ペナルティ係数を大幅増大 (error1: 20.0, error2: 15.0)
+      // ペナルティ係数は指定通り保持 (error1: 20.0, error2: 15.0)
       const penalty = (error1Amount * 20.0 + error2Amount * 15.0) / denom;
       score = Math.max(0, 100.0 - penalty);
       updateScoreUI();
@@ -825,9 +825,9 @@
           const age = i - startIdx;
           const alpha = tailLength > 0 ? (age / tailLength) * 0.9 : 0.9;
           
-          // 【修正】ジャークに応じた色決定
+          // 【修正3】ジャークに応じた色決定 (閾値を0.15, JERK_THRESHOLD(0.25) に変更)
           let r, g, b;
-          if (pCurr.jerk < 0.2) {
+          if (pCurr.jerk < 0.15) {
             r=59; g=130; b=246; // 青: 滑らか
           } else if (pCurr.jerk < JERK_THRESHOLD) {
             r=245; g=158; b=11; // 黄色/オレンジ: やや急
@@ -942,9 +942,9 @@
           
           const alpha = 0.6; // 固定の透明度
           
-          // 【修正】リザルト画面のジャークに応じた色決定
+          // 【修正3】リザルト画面のジャークに応じた色決定
           let r, g, b;
-          if (pCurr.jerk < 0.2) {
+          if (pCurr.jerk < 0.15) {
             r=59; g=130; b=246; 
           } else if (pCurr.jerk < JERK_THRESHOLD) {
             r=245; g=158; b=11; 
