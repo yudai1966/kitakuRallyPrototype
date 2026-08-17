@@ -357,7 +357,7 @@
     let lastRawAcc = null;              
     
     // Moving Average Filter State
-    const MA_WINDOW_SIZE = 10; // 【修正1】10に設定（ノイズ除去と応答性の両立）
+    const MA_WINDOW_SIZE = 10; // 【最適化】移動平均フィルターのサイズ
     let gxBuffer = [];
     let gyBuffer = [];
     
@@ -392,7 +392,7 @@
 
     // 定数
     const G_THRESHOLD = 0.4; 
-    const JERK_THRESHOLD = 0.25; // 【修正3】ジャークのペナルティ閾値を0.25に設定
+    const JERK_THRESHOLD = 0.30; // 【最適化】ジャークのペナルティ閾値を0.30に設定
     const SPEED_THRESHOLD = 12.0; 
     
     const realtimeCanvas = document.getElementById('canvas-realtime-g');
@@ -695,6 +695,7 @@
       }
       const vecF_ortho = vNorm(vCross(vecZ, vecR));
 
+      // 慣性力によりスマホにかかる力は進行方向と逆になるため、本来のGベクトルの符号になる
       const rawGx = vDot(vecM, vecR) / 9.81; 
       const rawGy = vDot(vecM, vecF_ortho) / 9.81;
 
@@ -722,7 +723,7 @@
           isPenaltyNow = true;
         }
 
-        // 【修正2】デッドゾーン (0.08G以上でジャークを計算・記録)
+        // 【最適化】デッドゾーン (0.08G以上でジャークを計算・記録)
         if (currentGMag > 0.08) {
           currentJerk = Math.sqrt(Math.pow(Gx - lastGx, 2) + Math.pow(Gy - lastGy, 2)) / dt;
           if (currentJerk > JERK_THRESHOLD) {
@@ -753,7 +754,7 @@
 
     function calculateScore() {
       const denom = Math.max(totalDistance, 0.1);
-      // ペナルティ係数は指定通り保持 (error1: 20.0, error2: 15.0)
+      // ペナルティ係数は厳格なスコアリングを維持 (error1: 20.0, error2: 15.0)
       const penalty = (error1Amount * 20.0 + error2Amount * 15.0) / denom;
       score = Math.max(0, 100.0 - penalty);
       updateScoreUI();
@@ -825,11 +826,11 @@
           const age = i - startIdx;
           const alpha = tailLength > 0 ? (age / tailLength) * 0.9 : 0.9;
           
-          // 【修正3】ジャークに応じた色決定 (閾値を0.15, JERK_THRESHOLD(0.25) に変更)
+          // 【最適化】ジャークに応じた色決定
           let r, g, b;
           if (pCurr.jerk < 0.15) {
             r=59; g=130; b=246; // 青: 滑らか
-          } else if (pCurr.jerk < JERK_THRESHOLD) {
+          } else if (pCurr.jerk < JERK_THRESHOLD) { // 0.15 <= jerk < 0.30
             r=245; g=158; b=11; // 黄色/オレンジ: やや急
           } else {
             r=239; g=68; b=68;  // 赤: 急操作・減点
@@ -942,11 +943,11 @@
           
           const alpha = 0.6; // 固定の透明度
           
-          // 【修正3】リザルト画面のジャークに応じた色決定
+          // 【最適化】リザルト画面のジャークに応じた色決定
           let r, g, b;
           if (pCurr.jerk < 0.15) {
             r=59; g=130; b=246; 
-          } else if (pCurr.jerk < JERK_THRESHOLD) {
+          } else if (pCurr.jerk < JERK_THRESHOLD) { // 0.15 <= jerk < 0.30
             r=245; g=158; b=11; 
           } else {
             r=239; g=68; b=68;  
