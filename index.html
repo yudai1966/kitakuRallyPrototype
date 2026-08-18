@@ -115,6 +115,7 @@
       color: var(--success);
       text-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
       transition: color 0.3s;
+      font-variant-numeric: tabular-nums;
     }
     .score-value.warning { color: var(--warning); text-shadow: 0 0 20px rgba(245, 158, 11, 0.4); }
     .score-value.danger { color: var(--danger); text-shadow: 0 0 20px rgba(239, 68, 68, 0.4); }
@@ -257,7 +258,7 @@
 
       <div class="card score-container" style="padding: 10px 0;">
         <div class="label">現在のGスコア</div>
-        <div id="current-score" class="score-value">100</div>
+        <div id="current-score" class="score-value">100.0</div>
         <div id="calib-status">⚠️ 前方方向を学習中...（15km/h以上で直進加速してください）</div>
         <div id="speed-status"></div>
       </div>
@@ -386,9 +387,11 @@
     let lastPenaltyTime = 0;   
     let lastPlotTime = 0;
     
-    // アニメーション・WakeLock
+    // アニメーション・WakeLock・Audio
     let animationFrameId = null;
     let wakeLock = null;
+    let audioCtx = null;
+    let lastBeepTime = 0;
 
     // 定数
     const G_THRESHOLD = 0.4; 
@@ -398,6 +401,26 @@
     const realtimeCanvas = document.getElementById('canvas-realtime-g');
     const realtimeCtx = realtimeCanvas.getContext('2d');
     const RT_SCALE = (realtimeCanvas.width / 2 * 0.8) / G_THRESHOLD; 
+
+    // --- Audio API (Beep Sound) ---
+    function playBeep() {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime); // 880Hz (A5)
+      
+      // プチッという短い音を作る
+      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+      
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.1);
+    }
 
     // --- History Storage (Local Storage) ---
     function loadHistory() {
@@ -417,7 +440,7 @@
         return `
           <div class="history-item">
             <span style="color: var(--text-sub); width: 35%;">${item.date}</span>
-            <span class="${scoreClass}" style="width: 35%; text-align: center; font-size: 1.1rem;">${Math.round(item.score)}点</span>
+            <span class="${scoreClass}" style="width: 35%; text-align: center; font-size: 1.1rem;">${item.score.toFixed(1)}点</span>
             <span style="width: 30%; text-align: right;">${item.distance.toFixed(2)}km</span>
           </div>
         `;
@@ -486,6 +509,14 @@
           alert('GPSがサポートされていません。');
           return;
         }
+        
+        // Initialize AudioContext on user interaction
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') {
+          await audioCtx.resume();
+        }
 
         resetData();
         switchView('view-running');
@@ -523,6 +554,7 @@
       lastGx = 0;
       lastGy = 0;
       lastPlotTime = performance.now();
+      lastBeepTime = 0;
       
       updateRunningUI();
       drawRealtimeCircleInit(); 
@@ -554,7 +586,6 @@
       
       releaseWakeLock();
       
-      // 結果をローカルストレージに保存
       if (isVecFInitialized && totalDistance >= 0.05) {
         saveHistory(score, totalDistance);
       }
@@ -723,12 +754,17 @@
           isPenaltyNow = true;
         }
 
-        // 【修正1】デッドゾーンを0.06Gに変更
         if (currentGMag > 0.06) {
           currentJerk = Math.sqrt(Math.pow(Gx - lastGx, 2) + Math.pow(Gy - lastGy, 2)) / dt;
           if (currentJerk > JERK_THRESHOLD) {
             error2Amount += dt;
             isPenaltyNow = true;
+            
+            // Audio Alert (ビープ音)
+            if (now - lastBeepTime > 1000) {
+              playBeep();
+              lastBeepTime = now;
+            }
           }
         }
         
@@ -754,7 +790,6 @@
 
     function calculateScore() {
       const denom = Math.max(totalDistance, 0.1);
-      // 【修正2】ペナルティ係数を適正化 (error1: 10.0, error2: 5.0) に変更
       const penalty = (error1Amount * 10.0 + error2Amount * 5.0) / denom;
       score = Math.max(0, 100.0 - penalty);
       updateScoreUI();
@@ -762,8 +797,8 @@
 
     function updateScoreUI() {
       const el = document.getElementById('current-score');
-      const s = Math.round(score);
-      el.innerText = s;
+      const s = Math.max(0, score);
+      el.innerText = s.toFixed(1); // 小数点第1位表示
       
       el.className = 'score-value';
       if (s < 60) el.classList.add('danger');
@@ -803,12 +838,10 @@
       const cx = w / 2;
       const cy = h / 2;
 
-      // キャンバスをクリアして背景グリッドを再描画（グリッドはフェードしない）
       realtimeCtx.clearRect(0, 0, w, h);
       drawGrid(realtimeCtx, w, h, RT_SCALE);
 
       if (gHistory.length > 1) {
-        // 直近約50件（約5秒分）の軌跡を描画
         const MAX_TAIL = 50;
         const startIdx = Math.max(1, gHistory.length - MAX_TAIL); 
         const tailLength = gHistory.length - startIdx;
@@ -822,18 +855,16 @@
           const pxCurr = cx + pCurr.x * RT_SCALE;
           const pyCurr = cy - pCurr.y * RT_SCALE;
           
-          // 古いデータほど透明度を下げる（彗星の尾）
           const age = i - startIdx;
           const alpha = tailLength > 0 ? (age / tailLength) * 0.9 : 0.9;
           
-          // ジャークに応じた色決定
           let r, g, b;
           if (pCurr.jerk < 0.15) {
-            r=59; g=130; b=246; // 青: 滑らか
-          } else if (pCurr.jerk < JERK_THRESHOLD) { // 0.15 <= jerk < 0.25
-            r=245; g=158; b=11; // 黄色/オレンジ: やや急
+            r=59; g=130; b=246; // 青
+          } else if (pCurr.jerk < JERK_THRESHOLD) { 
+            r=245; g=158; b=11; // 黄色/オレンジ
           } else {
-            r=239; g=68; b=68;  // 赤: 急操作・減点
+            r=239; g=68; b=68;  // 赤
           }
 
           realtimeCtx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
@@ -897,8 +928,9 @@
     // --- Canvas Rendering (Result) ---
     function renderResults() {
       const finalScoreEl = document.getElementById('final-score');
-      const s = Math.round(score);
-      finalScoreEl.innerText = s;
+      const s = Math.max(0, score);
+      finalScoreEl.innerText = s.toFixed(1); // 小数点第1位表示
+      
       finalScoreEl.className = 'score-value';
       if (s < 60) finalScoreEl.classList.add('danger');
       else if (s < 80) finalScoreEl.classList.add('warning');
@@ -931,7 +963,6 @@
       drawGrid(ctx, w, h, scale);
 
       if (gHistory.length > 1) {
-        // リザルト画面では全履歴を描画（フェードなし・半透明）
         for (let i = 1; i < gHistory.length; i++) {
           const pPrev = gHistory[i - 1];
           const pCurr = gHistory[i];
@@ -941,13 +972,12 @@
           const pxCurr = cx + pCurr.x * scale;
           const pyCurr = cy - pCurr.y * scale;
           
-          const alpha = 0.6; // 固定の透明度
+          const alpha = 0.6; 
           
-          // リザルト画面のジャークに応じた色決定
           let r, g, b;
           if (pCurr.jerk < 0.15) {
             r=59; g=130; b=246; 
-          } else if (pCurr.jerk < JERK_THRESHOLD) { // 0.15 <= jerk < 0.25
+          } else if (pCurr.jerk < JERK_THRESHOLD) { 
             r=245; g=158; b=11; 
           } else {
             r=239; g=68; b=68;  
